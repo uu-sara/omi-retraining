@@ -1,0 +1,28 @@
+# Requirements matching the Singularity container 24.02-torch-py3
+# Python 3.10+
+
+# Core ML
+torch>=2.0.0
+torchvision
+
+# Data handling
+numpy>=1.24.0,<2.0.0
+pandas>=2.0.0
+h5py>=3.10.0
+
+# Scientific computing
+scipy>=1.12.0
+scikit-learn>=1.2.0
+
+# XML processing
+lxml
+
+# Visualization
+matplotlib
+seaborn
+
+# Progress bars
+tqdm>=4.66.0
+
+# Logging
+tensorboard
