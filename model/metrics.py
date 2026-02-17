@@ -2,6 +2,8 @@
 """
 Evaluation metrics for ECG classification models.
 
+Based on code by Stefan Gustafsson (stefan.gustafsson@medsci.uu.se) for the OMI model.
+
 This module provides discrimination and calibration metrics:
     - AUROC (Area Under ROC Curve) / C-statistic
     - Brier Score
@@ -9,8 +11,6 @@ This module provides discrimination and calibration metrics:
 
 Metrics are computed in a one-vs-rest fashion for multi-class problems.
 """
-__author__ = "Stefan Gustafsson"
-__email__ = "stefan.gustafsson@medsci.uu.se"
 
 import logging
 import warnings

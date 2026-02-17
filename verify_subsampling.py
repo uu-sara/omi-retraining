@@ -11,7 +11,6 @@ Usage:
         --original data.txt \
         --subsampled data_subsample_20pct.txt data_subsample_1pct.txt
 """
-__author__ = "Generated for OMI retraining project"
 
 import argparse
 from pathlib import Path

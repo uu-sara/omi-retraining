@@ -11,8 +11,6 @@ This module defines 5 experiment variations:
 
 Each experiment uses the ExperimentConfig dataclass for configuration.
 """
-__author__ = "Stefan Gustafsson"
-__email__ = "stefan.gustafsson@medsci.uu.se"
 
 from typing import Dict, List
 from .base_config import (

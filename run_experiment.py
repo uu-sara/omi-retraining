@@ -18,8 +18,6 @@ Usage:
     # List available experiments
     python run_experiment.py --list
 """
-__author__ = "Stefan Gustafsson"
-__email__ = "stefan.gustafsson@medsci.uu.se"
 
 import argparse
 import logging

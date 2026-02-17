@@ -2,6 +2,8 @@
 """
 1D ResNet architecture for ECG signal classification.
 
+Based on code by Stefan Gustafsson (stefan.gustafsson@medsci.uu.se) for the OMI model.
+
 This module implements a ResNet-style convolutional neural network adapted for
 1D signals (ECG). The architecture follows the principles from:
 
@@ -11,8 +13,6 @@ References:
     [2] K. He et al., "Deep Residual Learning for Image Recognition,"
         CVPR 2016. https://arxiv.org/pdf/1512.03385.pdf
 """
-__author__ = "Stefan Gustafsson"
-__email__ = "stefan.gustafsson@medsci.uu.se"
 
 from typing import Tuple, List, Optional
 

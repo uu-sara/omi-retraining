@@ -3,12 +3,12 @@
 Code to setup an instance of ResNet1d for ECG classification.
 Ensemble version also defined for combining multiple model predictions.
 
+Based on code by Stefan Gustafsson (stefan.gustafsson@medsci.uu.se) for the OMI model.
+
 This module provides:
     - ECGModel: Single model for ECG classification with age/sex encoding
     - EnsembleECGModel: Ensemble of ECGModels for improved predictions
 """
-__author__ = "Stefan Gustafsson"
-__email__ = "stefan.gustafsson@medsci.uu.se"
 
 import os
 import logging

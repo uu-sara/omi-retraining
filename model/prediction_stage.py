@@ -2,12 +2,12 @@
 """
 Final prediction layer for the ECG model.
 
+Based on code by Stefan Gustafsson (stefan.gustafsson@medsci.uu.se) for the OMI model.
+
 This module provides the linear layer that maps from the combined
 feature representation (ECG features + age/sex encoding) to the
 output logits for classification.
 """
-__author__ = "Stefan Gustafsson"
-__email__ = "stefan.gustafsson@medsci.uu.se"
 
 import torch
 import torch.nn as nn

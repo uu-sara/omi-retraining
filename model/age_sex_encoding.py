@@ -2,6 +2,8 @@
 """
 Age and sex feature encoding for the ECG model.
 
+Based on code by Stefan Gustafsson (stefan.gustafsson@medsci.uu.se) for the OMI model.
+
 This module provides encoding of demographic features (age, sex) to be
 combined with ECG features for improved classification. The encoding
 learns a non-linear transformation of the low-dimensional demographic
@@ -13,8 +15,6 @@ Important Note on Input Normalization:
     are used alongside binary sex (0/1), the age gradients will dominate
     training, leading to poor learning of sex-related features.
 """
-__author__ = "Stefan Gustafsson"
-__email__ = "stefan.gustafsson@medsci.uu.se"
 
 import torch
 import torch.nn as nn

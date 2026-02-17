@@ -16,8 +16,6 @@ Usage:
     # Find best experiment by a specific metric
     python compare_experiments.py --best auroc_omi
 """
-__author__ = "Stefan Gustafsson"
-__email__ = "stefan.gustafsson@medsci.uu.se"
 
 import argparse
 import logging

@@ -6,8 +6,6 @@ This module provides:
     - ExperimentConfig: Dataclass defining all experiment parameters
     - Category mapping utilities for outcome aggregation
 """
-__author__ = "Stefan Gustafsson"
-__email__ = "stefan.gustafsson@medsci.uu.se"
 
 from dataclasses import dataclass, field, asdict
 from typing import List, Dict, Optional, Any

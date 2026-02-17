@@ -6,8 +6,6 @@ This module provides:
     - ExperimentRunner: Main class for running experiments with different configurations
     - Functions for training, validation, and testing with configurable settings
 """
-__author__ = "Stefan Gustafsson"
-__email__ = "stefan.gustafsson@medsci.uu.se"
 
 import json
 import logging

@@ -2,14 +2,14 @@
 """
 Utility functions for training, logging, and reproducibility.
 
+Based on code by Stefan Gustafsson (stefan.gustafsson@medsci.uu.se) for the OMI model.
+
 This module provides:
     - Seed management for reproducible training
     - Output folder management
     - Configuration saving
     - Logging (TensorBoard and CSV)
 """
-__author__ = "Stefan Gustafsson"
-__email__ = "stefan.gustafsson@medsci.uu.se"
 
 import datetime
 import json

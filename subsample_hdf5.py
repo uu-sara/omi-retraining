@@ -17,7 +17,6 @@ This will create:
     - data_subsample_1pct.hdf5 + outcomes_subsample_1pct.txt
     - data_subsample_20pct.hdf5 + outcomes_subsample_20pct.txt
 """
-__author__ = "Generated for OMI retraining project"
 
 import argparse
 import logging

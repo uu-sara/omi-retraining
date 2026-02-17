@@ -2,6 +2,8 @@
 """
 ECG dataset and batch dataloader for training and evaluation.
 
+Based on code by Stefan Gustafsson (stefan.gustafsson@medsci.uu.se) for the OMI model.
+
 This module provides:
     - OMIDataset: Loads ECG traces from HDF5 and outcomes from text file
     - BatchDataloader: Iterator for batch-wise data loading
@@ -12,8 +14,6 @@ Data Format:
     - Outcomes and splits stored in tab-separated text file
     - Age is normalized (mean-centered, unit variance) to prevent gradient imbalance
 """
-__author__ = "Stefan Gustafsson"
-__email__ = "stefan.gustafsson@medsci.uu.se"
 
 import logging
 from typing import List, Optional, Tuple, Union, Dict

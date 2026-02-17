@@ -6,8 +6,6 @@ This module provides:
     - ExperimentComparator: Load and compare results across experiments
     - Visualization functions for offline plotting
 """
-__author__ = "Stefan Gustafsson"
-__email__ = "stefan.gustafsson@medsci.uu.se"
 
 import json
 import logging

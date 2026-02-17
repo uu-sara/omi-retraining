@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
-"""Train and evaluate ECG classification models."""
-__author__ = "Stefan Gustafsson"
-__email__ = "stefan.gustafsson@medsci.uu.se"
+"""
+Train and evaluate ECG classification models.
+
+Based on code by Stefan Gustafsson (stefan.gustafsson@medsci.uu.se) for the OMI model.
+"""
 
 import argparse
 import json
