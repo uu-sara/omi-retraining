@@ -1,0 +1,6 @@
+experiment,exp_id,ensemble_size,aggregation,include_age,include_sex,simplified_categories,agg_auroc_omi,agg_auroc_nonomi,agg_auroc_control,agg_brier_simplified,accuracy,f1_macro,brier
+baseline,exp_001,5,logits,True,True,False,0.9693972621169823,0.86196797302992,0.8908090850057206,0.0557586989151732,0.9663749025045498,0.6152085190357659,0.09933060481155809
+simplified_categories,exp_002,5,logits,True,True,True,,,,,,,
+no_demographics,exp_003,5,logits,False,False,False,,,,,,,
+single_model,exp_004,1,logits,True,True,False,0.949065789916249,0.8603347555836494,0.886557456289538,0.05685089691586876,0.9653349510356183,0.6072979394000892,0.10084904988499957
+probability_averaging,exp_005,5,probabilities,True,True,False,,,,,,,

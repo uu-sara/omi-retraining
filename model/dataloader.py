@@ -22,6 +22,7 @@ import h5py
 import numpy as np
 import pandas as pd
 import torch
+from torch.utils.data import Dataset, DataLoader, Subset
 
 logger = logging.getLogger(__name__)
 
@@ -344,14 +345,28 @@ class OMIDataset:
         test_name: str
     ) -> None:
         """Set up boolean masks for data splits."""
+        # Log available split values for debugging
+        unique_splits = df[split_col].unique()
+        logger.info(f"Available split values: {unique_splits}")
+
         if test:
             self.test = np.array(df[split_col] == test_name)
             self.valid = np.zeros(len(df), dtype=bool)
             self.train = np.zeros(len(df), dtype=bool)
+            if sum(self.test) == 0:
+                logger.warning(
+                    f"No records found for test split '{test_name}'. "
+                    f"Available values: {unique_splits}"
+                )
         else:
             self.test = np.zeros(len(df), dtype=bool)
             self.valid = np.array(df[split_col] == 'valid')
             self.train = np.array(df[split_col] == 'train')
+            if sum(self.train) == 0 or sum(self.valid) == 0:
+                logger.warning(
+                    f"No records found for train ({sum(self.train)}) or valid ({sum(self.valid)}). "
+                    f"Available values: {unique_splits}"
+                )
     
     def _extract_outcomes(
         self,
@@ -582,6 +597,142 @@ class BatchDataloader:
     def __len__(self) -> int:
         """Get total number of batches (for progress bars)."""
         return self.n_batches
+
+
+class ECGDataset(Dataset):
+    """
+    PyTorch Dataset wrapper for OMIDataset.
+
+    Provides compatibility with PyTorch's DataLoader for parallel data loading,
+    prefetching, and pinned memory transfers.
+
+    Args:
+        omi_dataset: Source OMIDataset instance
+        indices: List of indices to include (for train/valid/test splits)
+    """
+
+    def __init__(
+        self,
+        omi_dataset: OMIDataset,
+        indices: List[int]
+    ) -> None:
+        self.omi_dataset = omi_dataset
+        self.indices = indices
+
+        # Pre-convert to numpy arrays for faster indexing
+        if not getattr(omi_dataset, 'using_memory', False):
+            self.outcomes_np = omi_dataset.outcomes.values
+            self.age_np = omi_dataset.age.values
+            self.male_np = omi_dataset.male.values
+        else:
+            self.outcomes_np = omi_dataset.outcomes_np
+            self.age_np = omi_dataset.age_np
+            self.male_np = omi_dataset.male_np
+
+    def __len__(self) -> int:
+        return len(self.indices)
+
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Get a single sample.
+
+        Args:
+            idx: Index into the subset (0 to len-1)
+
+        Returns:
+            Tuple of (trace, outcomes, age, male) as float32 tensors
+        """
+        # Map subset index to original dataset index
+        original_idx = self.indices[idx]
+
+        # Get trace data
+        if getattr(self.omi_dataset, 'using_memory', False):
+            mem_idx = self.omi_dataset.memory_index_map[original_idx]
+            trace = self.omi_dataset.traces_memory[mem_idx]
+        else:
+            trace = self.omi_dataset.traces[original_idx]
+
+        # Get metadata
+        outcomes = self.outcomes_np[original_idx]
+        age = self.age_np[original_idx]
+        male = self.male_np[original_idx]
+
+        # Convert to tensors
+        return (
+            torch.tensor(trace, dtype=torch.float32),
+            torch.tensor(outcomes, dtype=torch.float32),
+            torch.tensor(age, dtype=torch.float32),
+            torch.tensor(male, dtype=torch.float32)
+        )
+
+
+def create_dataloader(
+    omi_dataset: OMIDataset,
+    mask: np.ndarray,
+    batch_size: int,
+    shuffle: bool = False,
+    num_workers: int = 4,
+    pin_memory: bool = True,
+    prefetch_factor: int = 2,
+    persistent_workers: bool = True
+) -> DataLoader:
+    """
+    Create a PyTorch DataLoader with optimized settings for GPU training.
+
+    This factory function creates a DataLoader that:
+    - Uses multiple worker processes for parallel data loading
+    - Pins memory for faster CPU-to-GPU transfers
+    - Prefetches batches to hide data loading latency
+
+    Args:
+        omi_dataset: Source OMIDataset instance
+        mask: Boolean mask indicating which records to include
+        batch_size: Number of samples per batch
+        shuffle: Whether to shuffle data each epoch (default: False)
+        num_workers: Number of parallel data loading workers (default: 4)
+        pin_memory: Pin memory for faster GPU transfer (default: True)
+        prefetch_factor: Batches to prefetch per worker (default: 2)
+        persistent_workers: Keep workers alive between epochs (default: True)
+
+    Returns:
+        PyTorch DataLoader instance
+
+    Example:
+        >>> dset = OMIDataset(...)
+        >>> train_loader = create_dataloader(dset, dset.train, batch_size=1024, shuffle=True)
+        >>> for traces, outcomes, age, male in train_loader:
+        ...     # Process batch (already on CPU with pinned memory)
+        ...     traces = traces.to(device, non_blocking=True)
+    """
+    # Get indices from mask
+    indices = np.nonzero(mask)[0].tolist()
+
+    # Create PyTorch-compatible dataset
+    dataset = ECGDataset(omi_dataset, indices)
+
+    # Handle edge case where num_workers=0
+    if num_workers == 0:
+        persistent_workers = False
+        prefetch_factor = None  # Not supported with num_workers=0
+
+    # Create DataLoader with optimized settings
+    loader = DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+        prefetch_factor=prefetch_factor if num_workers > 0 else None,
+        persistent_workers=persistent_workers if num_workers > 0 else False,
+        drop_last=False
+    )
+
+    logger.info(
+        f"Created DataLoader: {len(indices)} samples, batch_size={batch_size}, "
+        f"num_workers={num_workers}, pin_memory={pin_memory}"
+    )
+
+    return loader
 
 
 def test() -> None:

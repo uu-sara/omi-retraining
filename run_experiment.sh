@@ -36,6 +36,7 @@ SCRIPT_DIR="/proj/nobackup/sens2020598/andreas/omi-retraining"
 OUTPUT_DIR="experiments"
 SUFFIX=""
 EPOCHS=""
+TEST_NAME=""
 TRAIN_ONLY=false
 EVAL_ONLY=false
 
@@ -58,6 +59,8 @@ print_usage() {
     echo "  --suffix <string>    Suffix to append to experiment directory name"
     echo "                       (e.g., 'subsample_20pct' for subsampled data)"
     echo "  --epochs <num>       Override max epochs"
+    echo "  --test-name <name>   Name of test split (default: 'test')"
+    echo "                       Use 'test_rand' or 'test_temp' for your data"
     echo "  --train-only         Only train, skip evaluation"
     echo "  --eval-only          Only evaluate (requires pre-trained models)"
     echo "  --help               Show this help message"
@@ -102,6 +105,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --epochs)
             EPOCHS="$2"
+            shift 2
+            ;;
+        --test-name)
+            TEST_NAME="$2"
             shift 2
             ;;
         --train-only)
@@ -170,6 +177,9 @@ if [ -n "$SUFFIX" ]; then
 fi
 if [ -n "$EPOCHS" ]; then
     EXTRA_ARGS="$EXTRA_ARGS --epochs $EPOCHS"
+fi
+if [ -n "$TEST_NAME" ]; then
+    EXTRA_ARGS="$EXTRA_ARGS --test-name $TEST_NAME"
 fi
 if [ "$TRAIN_ONLY" = true ]; then
     EXTRA_ARGS="$EXTRA_ARGS --train-only"

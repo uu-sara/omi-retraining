@@ -100,14 +100,16 @@ class ExperimentComparator:
         experiments_dir: str = "experiments",
         results_dir: str = "results",
         outcomes_file: str = "example_data/test_outcomes.txt",
+        test_name: str = "test",
     ) -> None:
         self.experiments_dir = Path(experiments_dir)
         self.results_dir = Path(results_dir)
         self.outcomes_file = Path(outcomes_file)
+        self.test_name = test_name
         self.experiments: Dict[str, Dict[str, Any]] = {}
 
         self.results_dir.mkdir(parents=True, exist_ok=True)
-        logger.info(f"Initialized comparator with experiments_dir={experiments_dir}")
+        logger.info(f"Initialized comparator with experiments_dir={experiments_dir}, test_name={test_name}")
 
     def _load_demographics(self) -> pd.DataFrame:
         """Load demographics (age, male) and detailed diagnosis columns from outcomes file."""
@@ -128,9 +130,10 @@ class ExperimentComparator:
             with open(config_path) as f:
                 config = json.load(f)
 
-            # Load metrics
+            # Load metrics - try test-specific file first, then generic
             metrics = {}
-            for metrics_file in ["metrics_test.json", "metrics.json"]:
+            metrics_files = [f"metrics_{self.test_name}.json", "metrics_test.json", "metrics.json"]
+            for metrics_file in metrics_files:
                 metrics_path = exp_path / metrics_file
                 if metrics_path.exists():
                     with open(metrics_path) as f:
@@ -144,10 +147,11 @@ class ExperimentComparator:
                 with open(training_path) as f:
                     training_results = json.load(f)
 
-            # Load confusion matrix
+            # Load confusion matrix - try test-specific file first, then generic
             confusion_matrix = None
             cm_labels = None
-            for cm_file in ["confusion_matrix_test.csv", "confusion_matrix.csv"]:
+            cm_files = [f"confusion_matrix_{self.test_name}.csv", "confusion_matrix_test.csv", "confusion_matrix.csv"]
+            for cm_file in cm_files:
                 cm_path = exp_path / cm_file
                 if cm_path.exists():
                     cm_df = pd.read_csv(cm_path, index_col=0)
@@ -155,20 +159,27 @@ class ExperimentComparator:
                     cm_labels = cm_df.columns.tolist()
                     break
 
-            # Load predictions
+            # Load predictions - try test-specific file first, then generic
             predictions_df = None
-            pred_path = exp_path / "predictions" / "predictions_test.csv"
-            if pred_path.exists():
-                predictions_df = pd.read_csv(pred_path)
+            pred_files = [f"predictions_{self.test_name}.csv", "predictions_test.csv"]
+            for pred_file in pred_files:
+                pred_path = exp_path / "predictions" / pred_file
+                if pred_path.exists():
+                    predictions_df = pd.read_csv(pred_path)
+                    break
 
-            # Load observed data
+            # Load observed data - try test-specific file first, then generic
             observed_df = None
-            obs_path = exp_path / "observed_data_test.csv"
-            if obs_path.exists():
-                observed_df = pd.read_csv(obs_path)
+            obs_files = [f"observed_data_{self.test_name}.csv", "observed_data_test.csv"]
+            for obs_file in obs_files:
+                obs_path = exp_path / obs_file
+                if obs_path.exists():
+                    observed_df = pd.read_csv(obs_path)
+                    break
 
             return {
                 "path": str(exp_path),
+                "dir_name": exp_path.name,
                 "config": config,
                 "metrics": metrics,
                 "training": training_results,

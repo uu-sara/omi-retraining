@@ -25,7 +25,8 @@ from tqdm import tqdm
 MODEL_DIR = Path(__file__).parent.parent / "model"
 sys.path.insert(0, str(MODEL_DIR))
 
-from dataloader import BatchDataloader, OMIDataset
+from dataloader import BatchDataloader, OMIDataset, create_dataloader
+from torch.utils.data import DataLoader
 from metrics import EcgMetrics, AggregatedMetrics
 from model import ECGModel, EnsembleECGModel
 import utils
@@ -212,14 +213,16 @@ class ExperimentRunner:
     def prepare_data(
         self,
         test: bool = False,
-        test_name: str = "test"
-    ) -> Tuple[OMIDataset, Optional[BatchDataloader], Optional[BatchDataloader], Optional[BatchDataloader]]:
+        test_name: str = "test",
+        num_workers: int = 4
+    ) -> Tuple[OMIDataset, Optional[DataLoader], Optional[DataLoader], Optional[DataLoader]]:
         """
         Prepare data loaders for training/validation or testing.
 
         Args:
             test: If True, prepare for testing only
             test_name: Name of test split
+            num_workers: Number of parallel data loading workers (default: 4)
 
         Returns:
             Tuple of (dataset, train_loader, valid_loader, test_loader)
@@ -241,12 +244,24 @@ class ExperimentRunner:
             use_simplified_categories=args.use_simplified_categories,
         )
 
+        # Use optimized PyTorch DataLoader with parallel workers and pinned memory
+        pin_memory = torch.cuda.is_available()
+
         if test:
-            test_loader = BatchDataloader(dset, args.batch_size, mask=dset.test)
+            test_loader = create_dataloader(
+                dset, dset.test, args.batch_size,
+                shuffle=False, num_workers=num_workers, pin_memory=pin_memory
+            )
             return dset, None, None, test_loader
         else:
-            train_loader = BatchDataloader(dset, args.batch_size, mask=dset.train)
-            valid_loader = BatchDataloader(dset, args.batch_size, mask=dset.valid)
+            train_loader = create_dataloader(
+                dset, dset.train, args.batch_size,
+                shuffle=True, num_workers=num_workers, pin_memory=pin_memory
+            )
+            valid_loader = create_dataloader(
+                dset, dset.valid, args.batch_size,
+                shuffle=False, num_workers=num_workers, pin_memory=pin_memory
+            )
             return dset, train_loader, valid_loader, None
 
     def train(self) -> Dict[str, Any]:
@@ -262,6 +277,12 @@ class ExperimentRunner:
 
         # Set random seed
         utils.seed_everything(self.config.seed, deterministic=True, warn_only=True)
+
+        # Enable cuDNN benchmark for faster training (auto-tunes for input size)
+        if torch.cuda.is_available():
+            torch.backends.cudnn.benchmark = True
+            n_gpus = torch.cuda.device_count()
+            tqdm.write(f"CUDA enabled: {n_gpus} GPU(s) available, cuDNN benchmark=True")
 
         # Prepare data
         tqdm.write("Setting up data...", end="")
@@ -331,8 +352,8 @@ class ExperimentRunner:
         self,
         ensemble_nr: int,
         dset: OMIDataset,
-        train_loader: BatchDataloader,
-        valid_loader: BatchDataloader,
+        train_loader: DataLoader,
+        valid_loader: DataLoader,
         loss_config: LossConfig,
         metrics_calc: EcgMetrics,
         log: utils.Logger,
@@ -348,6 +369,11 @@ class ExperimentRunner:
         # Create model
         model = ECGModel(args)
         model.to(args.device)
+
+        # Multi-GPU support with DataParallel
+        if torch.cuda.device_count() > 1:
+            tqdm.write(f"Using {torch.cuda.device_count()} GPUs with DataParallel")
+            model = nn.DataParallel(model)
 
         # Setup optimizer
         if args.optim_algo.upper() == "SGD":
@@ -403,10 +429,12 @@ class ExperimentRunner:
             is_best = valid_loss["tot"] < best_loss
             if is_best:
                 best_loss = valid_loss["tot"]
+                # Handle DataParallel: save the underlying model's state_dict
+                model_state = model.module.state_dict() if isinstance(model, nn.DataParallel) else model.state_dict()
                 torch.save({
                     "epoch": epoch_nr,
                     "ensemble": ensemble_nr,
-                    "model": model.state_dict(),
+                    "model": model_state,
                     "optimizer": optimizer.state_dict(),
                     "valid_loss": valid_loss["tot"],
                     "config": vars(args)
@@ -450,9 +478,9 @@ class ExperimentRunner:
     def _train_epoch(
         self,
         epoch_nr: int,
-        dataloader: BatchDataloader,
+        dataloader: DataLoader,
         optimizer: optim.Optimizer,
-        model: ECGModel,
+        model: nn.Module,
         loss_config: LossConfig,
         device: str
     ) -> Dict[str, float]:
@@ -463,9 +491,10 @@ class ExperimentRunner:
         pbar = tqdm(dataloader, desc=f"Training, epoch {epoch_nr:2d}", leave=False)
 
         for ecgs_cpu, outcomes_cpu, age_cpu, male_cpu in pbar:
-            ecgs = ecgs_cpu.to(device)
-            outcomes = outcomes_cpu.to(device)
-            age_sex = torch.stack([male_cpu, age_cpu], dim=1).to(device)
+            # Non-blocking transfers for overlapping data transfer with computation
+            ecgs = ecgs_cpu.to(device, non_blocking=True)
+            outcomes = outcomes_cpu.to(device, non_blocking=True)
+            age_sex = torch.stack([male_cpu, age_cpu], dim=1).to(device, non_blocking=True)
 
             optimizer.zero_grad()
             pred_logits = model((age_sex, ecgs))
@@ -493,10 +522,10 @@ class ExperimentRunner:
     def _evaluate_epoch(
         self,
         epoch_nr: int,
-        dataloader: BatchDataloader,
+        dataloader: DataLoader,
         n_records: int,
         n_outcomes: int,
-        model: ECGModel,
+        model: nn.Module,
         loss_config: LossConfig,
         device: str
     ) -> Tuple[Dict[str, float], np.ndarray]:
@@ -510,9 +539,10 @@ class ExperimentRunner:
 
         with torch.no_grad():
             for ecgs_cpu, outcomes_cpu, age_cpu, male_cpu in pbar:
-                ecgs = ecgs_cpu.to(device)
-                outcomes = outcomes_cpu.to(device)
-                age_sex = torch.stack([male_cpu, age_cpu], dim=1).to(device)
+                # Non-blocking transfers
+                ecgs = ecgs_cpu.to(device, non_blocking=True)
+                outcomes = outcomes_cpu.to(device, non_blocking=True)
+                age_sex = torch.stack([male_cpu, age_cpu], dim=1).to(device, non_blocking=True)
 
                 batch_start = batch_end
                 bs = ecgs_cpu.size(0)
@@ -705,7 +735,7 @@ class ExperimentRunner:
 
     def _predict_ensemble(
         self,
-        dataloader: BatchDataloader,
+        dataloader: DataLoader,
         n_records: int,
         n_outcomes: int,
         model: EnsembleECGModel
@@ -720,8 +750,9 @@ class ExperimentRunner:
 
         with torch.no_grad():
             for ecgs_cpu, outcomes_cpu, age_cpu, male_cpu in pbar:
-                ecgs = ecgs_cpu.to(self.device)
-                age_sex = torch.stack([male_cpu, age_cpu], dim=1).to(self.device)
+                # Non-blocking transfers
+                ecgs = ecgs_cpu.to(self.device, non_blocking=True)
+                age_sex = torch.stack([male_cpu, age_cpu], dim=1).to(self.device, non_blocking=True)
 
                 batch_start = batch_end
                 bs = ecgs_cpu.size(0)
@@ -737,7 +768,7 @@ class ExperimentRunner:
 
     def _predict_single(
         self,
-        dataloader: BatchDataloader,
+        dataloader: DataLoader,
         n_records: int,
         n_outcomes: int,
         model: ECGModel,
@@ -752,8 +783,9 @@ class ExperimentRunner:
 
         with torch.no_grad():
             for ecgs_cpu, outcomes_cpu, age_cpu, male_cpu in pbar:
-                ecgs = ecgs_cpu.to(self.device)
-                age_sex = torch.stack([male_cpu, age_cpu], dim=1).to(self.device)
+                # Non-blocking transfers
+                ecgs = ecgs_cpu.to(self.device, non_blocking=True)
+                age_sex = torch.stack([male_cpu, age_cpu], dim=1).to(self.device, non_blocking=True)
 
                 batch_start = batch_end
                 bs = ecgs_cpu.size(0)

@@ -1,0 +1,7 @@
+experiment,threshold,precision_omi,recall_omi
+baseline,0.05,0.1399,0.8365
+baseline,0.01,0.037,0.9808
+baseline,0.005,0.0223,0.9904
+single_model,0.05,0.2238,0.7596
+single_model,0.01,0.0723,0.8942
+single_model,0.005,0.0444,0.9231

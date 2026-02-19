@@ -1,0 +1,16 @@
+experiment,threshold,precision_omi,recall_omi
+baseline,0.05,0.0428,0.8365
+baseline,0.01,0.009,0.9808
+baseline,0.005,0.0051,0.9904
+simplified_categories,0.05,0.0768,0.7019
+simplified_categories,0.01,0.0129,0.9038
+simplified_categories,0.005,0.0071,0.9519
+no_demographics,0.05,0.0525,0.7981
+no_demographics,0.01,0.01,0.9327
+no_demographics,0.005,0.0055,0.9423
+single_model,0.05,0.0786,0.7596
+single_model,0.01,0.02,0.8942
+single_model,0.005,0.0114,0.9231
+probability_averaging,0.05,0.0293,0.8558
+probability_averaging,0.01,0.0057,0.9904
+probability_averaging,0.005,0.0035,0.9904

@@ -15,6 +15,14 @@ Usage:
 
     # Find best experiment by a specific metric
     python compare_experiments.py --best auroc_omi
+
+    # Compare using test_rand or test_temp splits
+    python compare_experiments.py --test-name test_rand
+    python compare_experiments.py --test-name test_temp
+
+    # Compare only specific experiments
+    python compare_experiments.py --include exp_001_baseline exp_002_no_demographics
+    python compare_experiments.py --include "exp_00*" --test-name test_rand
 """
 
 import argparse
@@ -78,10 +86,25 @@ def parse_args():
     )
 
     parser.add_argument(
+        "--include",
+        type=str,
+        nargs="+",
+        default=None,
+        help="Only include these experiment directories (by name or pattern)"
+    )
+
+    parser.add_argument(
         "--outcomes-file",
         type=str,
         default="example_data/test_outcomes.txt",
         help="Path to outcomes file with demographics (default: example_data/test_outcomes.txt)"
+    )
+
+    parser.add_argument(
+        "--test-name",
+        type=str,
+        default="test",
+        help="Name of test split (default: test). Use 'test_rand' or 'test_temp' for your data."
     )
 
     parser.add_argument(
@@ -104,6 +127,7 @@ def main():
         experiments_dir=args.experiments_dir,
         results_dir=args.results_dir,
         outcomes_file=args.outcomes_file,
+        test_name=args.test_name,
     )
 
     # Load experiments
@@ -112,6 +136,27 @@ def main():
     if not experiments:
         logger.error(f"No experiments found in {args.experiments_dir}")
         sys.exit(1)
+
+    # Filter experiments if --include specified
+    if args.include:
+        import fnmatch
+        filtered = {}
+        for exp_name, exp_data in experiments.items():
+            dir_name = exp_data.get("dir_name", "")
+            for pattern in args.include:
+                # Match against exp_name, dir_name, or as substring
+                if (fnmatch.fnmatch(exp_name, pattern) or
+                    fnmatch.fnmatch(dir_name, pattern) or
+                    pattern in exp_name or
+                    pattern in dir_name):
+                    filtered[exp_name] = exp_data
+                    break
+        comparator.experiments = filtered
+        experiments = filtered
+
+        if not experiments:
+            logger.error(f"No experiments matched patterns: {args.include}")
+            sys.exit(1)
 
     print(f"\nFound {len(experiments)} experiments:")
     for name in experiments.keys():
