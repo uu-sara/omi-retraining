@@ -275,6 +275,47 @@ class ExperimentComparator:
         predicted[nonomi_mask] = "NONOMI"
         return predicted
 
+    @staticmethod
+    def _classify_custom_thresholds(
+        pr_omi: np.ndarray,
+        pr_nonomi: np.ndarray,
+        omi_threshold: float = 0.005,
+        nonomi_threshold: float = 0.01,
+        diff_threshold: float = 0.1
+    ) -> np.ndarray:
+        """
+        Classify predictions with custom thresholds for OMI and NONOMI.
+
+        Logic:
+        - Classify as OMI if pr_omi > omi_threshold
+        - Classify as NONOMI if pr_nonomi > nonomi_threshold
+        - If both conditions are true: pick OMI unless |pr_omi - pr_nonomi| > diff_threshold
+          (in which case pick the higher probability class)
+        - Otherwise: CONTROL
+        """
+        predicted = np.full(len(pr_omi), "CONTROL", dtype=object)
+
+        omi_above = pr_omi > omi_threshold
+        nonomi_above = pr_nonomi > nonomi_threshold
+        both_above = omi_above & nonomi_above
+
+        # Case 1: Only OMI above threshold
+        predicted[omi_above & ~nonomi_above] = "OMI"
+
+        # Case 2: Only NONOMI above threshold
+        predicted[nonomi_above & ~omi_above] = "NONOMI"
+
+        # Case 3: Both above threshold
+        diff = np.abs(pr_omi - pr_nonomi)
+        # Default to OMI when both are above
+        predicted[both_above] = "OMI"
+        # But if difference > diff_threshold, pick the higher one (which is NONOMI since diff is large)
+        large_diff_mask = both_above & (diff > diff_threshold)
+        predicted[large_diff_mask & (pr_nonomi > pr_omi)] = "NONOMI"
+        predicted[large_diff_mask & (pr_omi >= pr_nonomi)] = "OMI"
+
+        return predicted
+
     def _compute_subgroup_masks(self, merged_df: pd.DataFrame) -> Dict[str, np.ndarray]:
         """Return dict of subgroup_name -> boolean mask."""
         masks = {}
@@ -608,6 +649,169 @@ class ExperimentComparator:
 
         return saved_paths
 
+    def create_custom_threshold_confusion_matrices(self) -> Optional[str]:
+        """
+        Create confusion matrices using custom classification logic.
+
+        Logic: OMI if pr_omi > 0.005, NONOMI if pr_nonomi > 0.01.
+        If both: pick OMI unless |pr_omi - pr_nonomi| > 0.1.
+
+        Saves to results/confusion_matrix_custom_thresholds.png.
+        """
+        if not PLOTTING_AVAILABLE:
+            logger.warning("Matplotlib not available for plotting")
+            return None
+
+        demographics = self._load_demographics()
+        exp_names = list(self.experiments.keys())
+        n_exp = len(exp_names)
+
+        fig, axes = plt.subplots(
+            1, n_exp,
+            figsize=(6 * n_exp, 5),
+            squeeze=False,
+        )
+
+        for e_idx, exp_name in enumerate(exp_names):
+            ax = axes[0][e_idx]
+            exp_data = self.experiments[exp_name]
+            merged = self._prepare_experiment_data(exp_name, exp_data, demographics)
+
+            if merged is None:
+                ax.text(0.5, 0.5, "No data", ha="center", va="center")
+                ax.set_title(exp_name)
+                continue
+
+            true_labels = merged["true_5group"].values
+            predicted = self._classify_custom_thresholds(
+                merged["pr_omi"].values,
+                merged["pr_nonomi"].values,
+                omi_threshold=0.005,
+                nonomi_threshold=0.01,
+                diff_threshold=0.1,
+            )
+
+            # Build 5x3 confusion matrix
+            cm = np.zeros((len(FIVE_GROUP_ORDER), len(THREE_GROUP_ORDER)), dtype=int)
+            for i, tl in enumerate(FIVE_GROUP_ORDER):
+                for j, pl in enumerate(THREE_GROUP_ORDER):
+                    cm[i, j] = int(np.sum((true_labels == tl) & (predicted == pl)))
+
+            # Plot heatmap
+            sns.heatmap(
+                cm, annot=True, fmt="d", cmap="Blues",
+                xticklabels=THREE_GROUP_ORDER,
+                yticklabels=FIVE_GROUP_ORDER,
+                ax=ax, cbar=False,
+            )
+            ax.set_xlabel("Predicted")
+            ax.set_ylabel("True")
+            ax.set_title(exp_name)
+
+        fig.suptitle("Confusion Matrices — Custom Thresholds (OMI>0.005, NONOMI>0.01, diff>0.1)", fontsize=12)
+        plt.tight_layout()
+        save_path = self.results_dir / "confusion_matrix_custom_thresholds.png"
+        plt.savefig(str(save_path), dpi=150, bbox_inches="tight")
+        logger.info(f"Saved custom threshold confusion matrix to {save_path}")
+        plt.close(fig)
+
+        return str(save_path)
+
+    def create_cstatistic_bar_chart_nonomi(self) -> Optional[Any]:
+        """
+        Create bar chart of C-statistic (AUROC) for NONOMI by subgroup, colored by experiment.
+        Saves to results/cstatistic_by_subgroup_nonomi.png.
+        """
+        if not PLOTTING_AVAILABLE:
+            logger.warning("Matplotlib not available for plotting")
+            return None
+
+        demographics = self._load_demographics()
+
+        subgroup_names = ["OMI", "NONOMI", "NSTEMI-OMI", "MEN", "WOMEN", "Below 50", "Above 50"]
+        exp_names = list(self.experiments.keys())
+
+        # Compute AUROC for NONOMI for each experiment × subgroup
+        data_rows = []
+        for exp_name in exp_names:
+            exp_data = self.experiments[exp_name]
+            merged = self._prepare_experiment_data(exp_name, exp_data, demographics)
+            if merged is None:
+                continue
+
+            masks = self._compute_subgroup_masks(merged)
+
+            for sg_name in subgroup_names:
+                if sg_name not in masks:
+                    continue
+                sg_mask = masks[sg_name]
+                sg_df = merged[sg_mask]
+
+                if len(sg_df) < 2 or sg_df["is_nonomi_true"].nunique() < 2:
+                    continue
+
+                try:
+                    auroc = roc_auc_score(sg_df["is_nonomi_true"], sg_df["pr_nonomi"])
+                    data_rows.append({
+                        "experiment": exp_name,
+                        "subgroup": sg_name,
+                        "auroc": auroc,
+                    })
+                except ValueError:
+                    continue
+
+        if not data_rows:
+            logger.warning("No AUROC data computed for NONOMI bar chart")
+            return None
+
+        plot_df = pd.DataFrame(data_rows)
+
+        fig, ax = plt.subplots(figsize=(14, 6))
+
+        subgroups_present = [sg for sg in subgroup_names if sg in plot_df["subgroup"].values]
+        n_subgroups = len(subgroups_present)
+        n_experiments = len(exp_names)
+        x = np.arange(n_subgroups)
+        width = 0.8 / max(n_experiments, 1)
+
+        colors = plt.cm.Set2(np.linspace(0, 1, n_experiments))
+
+        for i, exp_name in enumerate(exp_names):
+            exp_df = plot_df[plot_df["experiment"] == exp_name]
+            values = []
+            for sg in subgroups_present:
+                row = exp_df[exp_df["subgroup"] == sg]
+                values.append(row["auroc"].values[0] if len(row) > 0 else 0)
+
+            offset = (i - (n_experiments - 1) / 2) * width
+            bars = ax.bar(x + offset, values, width, label=exp_name, color=colors[i])
+
+            for bar, val in zip(bars, values):
+                if val > 0:
+                    ax.annotate(
+                        f"{val:.3f}",
+                        xy=(bar.get_x() + bar.get_width() / 2, val),
+                        xytext=(0, 3),
+                        textcoords="offset points",
+                        ha="center", va="bottom", fontsize=7,
+                    )
+
+        ax.set_ylabel("C-statistic (AUROC)", fontsize=12)
+        ax.set_title("C-statistic (AUROC) for NONOMI by Subgroup", fontsize=14)
+        ax.set_xticks(x)
+        ax.set_xticklabels(subgroups_present, fontsize=10)
+        ax.legend(loc="lower right")
+        ax.set_ylim(0, 1.05)
+        ax.yaxis.grid(True, linestyle="--", alpha=0.7)
+        ax.set_axisbelow(True)
+
+        plt.tight_layout()
+        save_path = self.results_dir / "cstatistic_by_subgroup_nonomi.png"
+        plt.savefig(str(save_path), dpi=150, bbox_inches="tight")
+        logger.info(f"Saved NONOMI C-statistic bar chart to {save_path}")
+        plt.close(fig)
+        return fig
+
     def create_roc_curves(self) -> Optional[Any]:
         """
         Create ROC curves for OMI and NONOMI outcomes, comparing models.
@@ -681,12 +885,19 @@ class ExperimentComparator:
         # Plots
         if PLOTTING_AVAILABLE:
             self.create_cstatistic_bar_chart()
-            outputs["cstatistic_bar_chart"] = str(self.results_dir / "cstatistic_by_subgroup.png")
+            outputs["cstatistic_bar_chart_omi"] = str(self.results_dir / "cstatistic_by_subgroup.png")
+
+            self.create_cstatistic_bar_chart_nonomi()
+            outputs["cstatistic_bar_chart_nonomi"] = str(self.results_dir / "cstatistic_by_subgroup_nonomi.png")
 
             cm_paths = self.create_detailed_confusion_matrices()
             if cm_paths:
                 for path in cm_paths:
                     outputs[f"confusion_matrix_{Path(path).stem}"] = path
+
+            custom_cm_path = self.create_custom_threshold_confusion_matrices()
+            if custom_cm_path:
+                outputs["confusion_matrix_custom_thresholds"] = custom_cm_path
 
             self.create_roc_curves()
             outputs["roc_curves"] = str(self.results_dir / "roc_curves.png")
